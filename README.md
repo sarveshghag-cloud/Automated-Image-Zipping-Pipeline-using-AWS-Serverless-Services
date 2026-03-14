@@ -2,19 +2,20 @@
 
 ##  Overview
 
-This project implements an **event-driven, fully serverless image processing pipeline** on AWS that automatically compresses uploaded images into ZIP files without requiring any server management.
+This project demonstrates a serverless image processing pipeline using AWS.
+When a user uploads an image through a simple HTML UI, the image is stored in an Amazon S3 bucket. An AWS Lambda function is automatically triggered, compresses the image into a ZIP file, and stores the compressed file in another S3 bucket.
 
-##  Key Highlights
+This architecture is fully automated, scalable, and serverless.
 
-- Event-driven automation using S3 ObjectCreated events
+##  AWS Services Used
 
-- Serverless compute with AWS Lambda
+- Amazon S3 – Object storage for raw and compressed images
 
-- Secure access using IAM roles and policies
+- AWS Lambda – Serverless compute for image compression
 
-- Scalable and cost-efficient architecture
+- AWS IAM – Role and permission management
 
-- No server provisioning or maintenance required
+- Amazon S3 Event Notifications – Automatically trigger Lambda when an image is uploaded
 
 ##  Architecture
 
@@ -32,6 +33,9 @@ This project implements an **event-driven, fully serverless image processing pip
 - Create a destination S3 bucket to store compressed ZIP files.<br>
   Example: compressed-image-zip-bucket
 
+![alt text](IMG/bucket.png)
+![alt text](IMG/rawbucket.png)
+
 ## Step 2: Create IAM Role for Lambda
 
 - Create an IAM role with AWS Lambda as the trusted service.
@@ -46,31 +50,28 @@ This project implements an **event-driven, fully serverless image processing pip
 - create inline policy and role
 
 ```
+
 {
-	"Version": "2012-10-17",
-	"Statement": [
-		{
-			"Effect": "Allow",
-			"Action": [
-				"s3:GetObject",
-				"s3:ListBucket"
-			],
-			"Resource": [
-				"arn:aws:s3:::raw-image-uploads-bucket",
-				"arn:aws:s3:::raw-image-uploads-bucket/*"
-			]
-		},
-		{
-			"Effect": "Allow",
-			"Action": "s3:PutObject",
-			"Resource": "arn:aws:s3:::compressed-image-zip-bucket/*"
-		}
-	]
+ "Version": "2012-10-17",
+ "Statement": [
+  {
+   "Effect": "Allow",
+   "Action": ["s3:GetObject"],
+   "Resource": "arn:aws:s3:::raw-images-uploads-bucket/*"
+  },
+  {
+   "Effect": "Allow",
+   "Action": ["s3:PutObject"],
+   "Resource": "arn:aws:s3:::compressed-images-zip-bucket/*"
+  }
+ ]
 }
 
 
 
 ```
+![alt text](IMG/role.png)
+![alt text](IMG/policy.png)
 
 ## Step 3: Create AWS Lambda Function
 
@@ -79,41 +80,42 @@ This project implements an **event-driven, fully serverless image processing pip
 - Assign the previously created IAM role.
 
 ```
-import json
 import boto3
 import zipfile
 import os
 
 s3 = boto3.client('s3')
 
-DEST_BUCKET = 'compressed-image-zip-bucket'
-
 def lambda_handler(event, context):
-   # Get source info
-   source_bucket = event['Records'][0]['s3']['bucket']['name']
-   object_key = event['Records'][0]['s3']['object']['key']
 
-   # File paths
-   download_path = f"/tmp/{os.path.basename(object_key)}"
-   zip_path = f"/tmp/{os.path.basename(object_key)}.zip"
+    # Get bucket name and file key from event
+    bucket = event['Records'][0]['s3']['bucket']['name']
+    key = event['Records'][0]['s3']['object']['key']
 
-   # Download image
-   s3.download_file(source_bucket, object_key, download_path)
+    # Define temporary file paths
+    download_path = '/tmp/' + key
+    zip_path = '/tmp/' + key + '.zip'
 
-   # Create ZIP
-   with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
-       zipf.write(download_path, arcname=os.path.basename(download_path))
+    # Download image from S3
+    s3.download_file(bucket, key, download_path)
 
-   # Upload ZIP
-   s3.upload_file(zip_path, DEST_BUCKET, f"zips/{os.path.basename(zip_path)}")
+    # Create ZIP file
+    with zipfile.ZipFile(zip_path, 'w') as zipf:
+        zipf.write(download_path, os.path.basename(download_path))
 
-   return {
-       "statusCode": 200,
-       "body": "ZIP created successfully"
-   }
+    # Upload ZIP file to compressed bucket
+    s3.upload_file(zip_path, 'compressed-images-zip-bucket', key + '.zip')
+
+    return {
+        'statusCode': 200,
+        'body': 'File compressed successfully'
+    }
+
 ```
 
 - test and deploy
+
+![alt text](IMG/lambda.png)
 
 ## Step 4: Configure S3 Event Trigger
 
@@ -123,51 +125,248 @@ def lambda_handler(event, context):
 
 - Optionally restrict triggers using file suffixes (e.g., .jpg, .png).
 
-## Step 5: Upload and Process Images
+![alt text](IMG/event.png)
 
-Upload an image to the source S3 bucket.
+## Step 5: Create Upload UI
+- upload index.html, style.css, app.js file to raw bucket 
+- make the raw upload bucket public access 
+- enable static host 
+```
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Auto UI</title>
+    <link rel="stylesheet" href="style.css">
+    <script src="https://sdk.amazonaws.com/js/aws-sdk-2.283.1.min.js"></script>
+    <script src="app.js"></script>
+</head>
+<body>
+    <div class="container">
+        <h1>Welcome</h1>
+        <p>Please upload an image below.</p>
+        <input type="file" id="imageInput" accept="image/*">
+        <button onclick="uploadImage()">Upload</button>
+        <div id="status"></div>
+    </div>
+</body>
+</html>
+body{
 
-S3 automatically triggers the Lambda function.
+font-family:Arial, sans-serif;
 
-Lambda downloads the image, compresses it into a ZIP file, and uploads it to the destination bucket.
+background:linear-gradient(135deg,#4facfe,#00f2fe);
 
-## Step 6: Verify Output
+height:100vh;
 
-Confirm that the ZIP file appears in the destination S3 bucket.
+display:flex;
 
-Verify the file structure and compression.
+justify-content:center;
 
-Check CloudWatch logs for successful execution or errors.
+align-items:center;
+
+margin:0;
+
+}
+
+.container{
+
+background:white;
+
+padding:40px;
+
+border-radius:12px;
+
+text-align:center;
+
+box-shadow:0 10px 25px rgba(0,0,0,0.2);
+
+width:380px;
+
+}
+
+h1{
+
+color:#333;
+
+margin-bottom:10px;
+
+}
+
+p{
+
+color:#777;
+
+font-size:14px;
+
+}
+
+input{
+
+margin-top:20px;
+
+}
+
+input[type="file"]{
+
+border: 2px dashed #4facfe;
+
+padding: 10px;
+
+border-radius: 6px;
+
+background: #f9f9f9;
+
+cursor: pointer;
+
+}
+
+input[type="file"]:hover{
+
+border-color: #0077ff;
+
+}
+
+button{
+
+margin-top:20px;
+
+padding:12px 25px;
+
+background:#4facfe;
+
+color:white;
+
+border:none;
+
+border-radius:6px;
+
+cursor:pointer;
+
+font-size:16px;
+
+transition:0.3s;
+
+}
+
+button:hover{
+
+background:#0077ff;
+
+}
+
+#status{
+
+margin-top:20px;
+
+font-weight:bold;
+
+}
+
+
+```
+
+## Step 6: create a uploaded image script 
+
+```
+AWS.config.update({
+accessKeyId:"your_access_key",
+secretAccessKey:"your_secret_key",
+region:"ap-southeast-1"
+});
+
+
+function uploadImage() {
+
+const fileInput = document.getElementById('imageInput');
+const status = document.getElementById('status');
+const file = fileInput.files[0];
+
+if (!file) {
+status.textContent = 'Please select an image.';
+return;
+}
+
+const s3 = new AWS.S3();
+
+const params = {
+Bucket: "raw-images-uploads-bucket",
+Key: file.name,
+Body: file,
+ContentType: file.type
+};
+
+s3.putObject(params, function(err, data){
+
+if(err){
+console.error(err);
+status.textContent = 'Upload failed';
+}else{
+status.textContent = 'Upload successful';
+}
+
+});
+
+}
+
+```
+![](./IMG/ui.png)
 
 ---
 
-##  Output
 
-## 1. s3 Bucket
 
-![alt text](IMG/bucket.png)
 
-## 2. object inside the source bucket
 
-![alt text](IMG/rawbucket.png)
 
-## 3. create Iam role and policy
 
-![alt text](IMG/role.png)
-![alt text](IMG/policy.png)
 
-## 4. Lambda
+## Step 7: Configure CORS for S3
+- Go to:
 
-![alt text](IMG/lambda.png)
+S3 → raw-images-uploads-bucket → Permissions → CORS
 
-## 5.destination output
+- Add 
+```
+[
+    {
+        "AllowedHeaders": [
+            "*"
+        ],
+        "AllowedMethods": [
+            "GET",
+            "PUT",
+            "POST",
+            "DELETE",
+            "HEAD"
+        ],
+        "AllowedOrigins": [
+            "*"
+        ],
+        "ExposeHeaders": []
+    }
+]
 
-![alt text](IMG/output.png)
+
+```
 
 ## 6 cloudwatch log of lambda
 
 ![alt text](IMG/log.png)
 --
+
+## Benefits of This Project
+
+- Fully serverless architecture
+
+- Event-driven automation
+
+- Scalable image processing
+
+- No server management
+
+- Cost-efficient AWS solution
 
 ##  Summary
 
