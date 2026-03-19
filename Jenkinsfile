@@ -4,6 +4,7 @@ pipeline {
     environment {
         AWS_REGION = 'ap-southeast-1'
         S3_BUCKET = 'raw-images-uploads-bucket'
+        LAMBDA_FUNCTION = 'image-zip-function'
     }
 
     stages {
@@ -22,14 +23,42 @@ pipeline {
 
         stage('Deploy UI to S3') {
             steps {
-                withAWS(credentials: 'aws-credentials', region: 'ap-southeast-1') {
-                    sh '''
-                    aws s3 cp index.html s3://raw-images-uploads-bucket/
-                    aws s3 cp app.js s3://raw-images-uploads-bucket/
-                    aws s3 cp style.css s3://raw-images-uploads-bucket/
-                    '''
-                }
+                sh '''
+                echo "Uploading UI to S3..."
+                aws s3 sync . s3://$S3_BUCKET --exclude ".git/*"
+                '''
             }
+        }
+
+        stage('Package Lambda') {
+            steps {
+                sh '''
+                echo "Zipping Lambda code..."
+                zip -r lambda.zip lambda_function.py
+                '''
+            }
+        }
+
+        stage('Deploy Lambda') {
+            steps {
+                sh '''
+                echo "Updating Lambda function..."
+                aws lambda update-function-code \
+                --function-name $LAMBDA_FUNCTION \
+                --zip-file fileb://lambda.zip \
+                --region $AWS_REGION
+                '''
+            }
+        }
+
+    }
+
+    post {
+        success {
+            echo "Deployment Successful 🚀"
+        }
+        failure {
+            echo "Deployment Failed ❌"
         }
     }
 }
