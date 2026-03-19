@@ -4,7 +4,7 @@ pipeline {
     environment {
         AWS_REGION = 'ap-southeast-1'
         S3_BUCKET = 'raw-images-uploads-bucket'
-        LAMBDA_FUNCTION = 'image-zip-function'
+        LAMBDA_FUNCTION = 'image-zipper-function'
     }
 
     stages {
