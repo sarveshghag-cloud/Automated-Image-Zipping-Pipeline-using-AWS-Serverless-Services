@@ -23,10 +23,15 @@ pipeline {
 
         stage('Deploy UI to S3') {
             steps {
-                sh '''
-                echo "Uploading UI to S3..."
-                aws s3 sync . s3://$S3_BUCKET --exclude ".git/*"
-                '''
+                withCredentials([[
+                    $class: 'AmazonWebServicesCredentialsBinding',
+                    credentialsId: 'aws-creds'
+                ]]) {
+                    sh '''
+                    echo "Uploading UI to S3..."
+                    aws s3 sync . s3://$S3_BUCKET --exclude ".git/*"
+                    '''
+                }
             }
         }
 
@@ -41,16 +46,20 @@ pipeline {
 
         stage('Deploy Lambda') {
             steps {
-                sh '''
-                echo "Updating Lambda function..."
-                aws lambda update-function-code \
-                --function-name $LAMBDA_FUNCTION \
-                --zip-file fileb://lambda.zip \
-                --region $AWS_REGION
-                '''
+                withCredentials([[
+                    $class: 'AmazonWebServicesCredentialsBinding',
+                    credentialsId: 'aws-creds'
+                ]]) {
+                    sh '''
+                    echo "Updating Lambda function..."
+                    aws lambda update-function-code \
+                    --function-name $LAMBDA_FUNCTION \
+                    --zip-file fileb://lambda.zip \
+                    --region $AWS_REGION
+                    '''
+                }
             }
         }
-
     }
 
     post {
